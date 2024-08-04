@@ -1,0 +1,82 @@
+import numpy as np
+from PIL import Image
+from keras.models import Model
+from keras.layers import Input, Dense, Embedding, LSTM, TimeDistributed
+from keras.preprocessing.image import load_img, img_to_array
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
+
+# Load dataset
+train_dir = 'path/to/train/directory'
+test_dir = 'path/to/test/directory'
+
+train_captions = []
+train_images = []
+for file in os.listdir(train_dir):
+    img = load_img(os.path.join(train_dir, file))
+    img_array = img_to_array(img)
+    train_images.append(img_array)
+    with open(os.path.join(train_dir, file + '.txt'), 'r') as f:
+        caption = f.read()
+        train_captions.append(caption)
+
+test_captions = []
+test_images = []
+for file in os.listdir(test_dir):
+    img = load_img(os.path.join(test_dir, file))
+    img_array = img_to_array(img)
+    test_images.append(img_array)
+    with open(os.path.join(test_dir, file + '.txt'), 'r') as f:
+        caption = f.read()
+        test_captions.append(caption)
+
+# Preprocess captions
+tokenizer = Tokenizer(num_words=5000)
+tokenizer.fit_on_texts(train_captions)
+train_captions_seq = tokenizer.texts_to_sequences(train_captions)
+test_captions_seq = tokenizer.texts_to_sequences(test_captions)
+
+max_caption_len = 20
+padded_train_captions = pad_sequences(train_captions_seq, maxlen=max_caption_len)
+padded_test_captions = pad_sequences(test_captions_seq, maxlen=max_caption_len)
+
+# Define model architecture
+input_img = Input(shape=(224, 224, 3))
+x = Conv2D(64, (3, 3), activation='relu')(input_img)
+x = MaxPooling2D((2, 2))(x)
+x = Conv2D(128, (3, 3), activation='relu')(x)
+x = MaxPooling2D((2, 2))(x)
+x = Conv2D(256, (3, 3), activation='relu')(x)
+x = MaxPooling2D((2, 2))(x)
+x = Flatten()(x)
+x = Dense(128, activation='relu')(x)
+
+input_caption = Input(shape=(max_caption_len,))
+x_caption = Embedding(5000, 128, input_length=max_caption_len)(input_caption)
+x_caption = LSTM(128, return_sequences=True)(x_caption)
+x_caption = TimeDistributed(Dense(128, activation='relu'))(x_caption)
+
+# Concatenate image and caption features
+x_concat = concatenate([x, x_caption])
+
+# Output layer
+output = Dense(5000, activation='softmax')(x_concat)
+
+# Define model
+model = Model(inputs=[input_img, input_caption], outputs=output)
+
+# Compile model
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Train model
+model.fit([train_images, padded_train_captions], epochs=10, batch_size=32, validation_data=([test_images, padded_test_captions]))
+
+# Evaluate model
+loss, accuracy = model.evaluate([test_images, padded_test_captions])
+print(f'Test loss: {loss:.3f}, Test accuracy: {accuracy:.3f}')
+
+# Use model to generate captions for new images
+new_img = load_img('path/to/new/image.jpg')
+new_img_array = img_to_array(new_img)
+new_caption = model.predict([new_img_array])
+print(new_caption)
